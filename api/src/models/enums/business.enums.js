@@ -1,0 +1,101 @@
+const BUSINESS_SECTORS = {
+  "Agriculture & Agribusiness": [
+    "Crop Production",
+    "Livestock Farming",
+    "Fisheries & Aquaculture",
+    "Agro-processing / Value Addition",
+    "Agricultural Inputs & Supplies",
+    "Forestry & Timber",
+  ],
+  Manufacturing: [
+    "Food & Beverages",
+    "Textiles & Apparel",
+    "Leather & Footwear",
+    "Chemicals & Pharmaceuticals",
+    "Plastics & Rubber",
+    "Furniture & Woodwork",
+    "Paper & Printing",
+    "Building Materials & Cement",
+  ],
+  "Wholesale & Retail Trade": [
+    "General Merchandise",
+    "Retail Kiosks",
+    "Supermarkets",
+    "Import & Export",
+    "E-commerce / Online Trading",
+  ],
+  Services: [
+    "Education Services",
+    "Health & Social Work Services",
+    "Professional & Financial Services",
+    "Hospitality & Tourism",
+    "Logistics & Transportation",
+    "Cleaning & Facility Management",
+    "Security Services",
+  ],
+  "Information & Communication / ICT": [
+    "Software Development & IT Services",
+    "Digital Marketing & Media",
+    "Telecommunications & Networking",
+    "Fintech",
+    "Graphics, Animation & Design",
+    "Film, Music & Entertainment",
+  ],
+  "Construction & Real Estate": [
+    "Building Construction",
+    "Civil Engineering & Infrastructure",
+    "Real Estate Development",
+    "Property Management",
+  ],
+  "Transportation & Storage": [
+    "Road Transport",
+    "Aviation Services",
+    "Marine / Shipping Services",
+    "Warehousing & Storage",
+    "Vehicle Maintenance & Auto-Parts",
+  ],
+  "Energy & Natural Resources": [
+    "Renewable Energy (Solar, Wind, Biomass)",
+    "Oil & Gas Services",
+    "Mining & Solid Minerals",
+    "Waste Recycling & Environmental Management",
+  ],
+  "Education & Training": [
+    "Primary / Secondary Schools",
+    "Vocational Training Centers",
+    "Edtech Solutions",
+  ],
+  "Health & Social Works": [
+    "Hospitals & Clinics",
+    "Diagnostic Laboratories",
+    "Medical Consumables & Pharmaceuticals",
+  ],
+  "Arts, Entertainment & Recreation": [
+    "Event Management",
+    "Creative Studios",
+    "Arts & Crafts",
+    "Recreational Services",
+  ],
+  "Professional, Scientific & Technical Activities": [
+    "Engineering Services",
+    "Scientific Research & Development",
+    "Professional Consulting Services",
+  ],
+  "Administrative & Support Services": [
+    "Facility Management",
+    "HR & Admin Outsourcing",
+    "Shared Services",
+  ],
+  "Real Estate Activities": ["Rental, Leasing & Property Services"],
+  Others: [
+    "Cooperative Societies",
+    "NGOs / Social Enterprises",
+    "Faith-Based Enterprises",
+    "Miscellaneous",
+  ],
+};
+
+// Extract sector list
+const SECTORS = Object.keys(BUSINESS_SECTORS);
+
+module.exports = { BUSINESS_SECTORS, SECTORS };
