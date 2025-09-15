@@ -109,5 +109,40 @@ module.exports = () => {
     }
   });
 
+  api.get("/users", async (req, res) => {
+    try {
+      const { page, limit, search, status } = req.query;
+      const result = await UserController.getUsers({
+        page: Number(page) || 1,
+        limit: Number(limit) || 10,
+        search,
+        status,
+      });
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  });
+
+  api.get("/users/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await UserController.getUser(id);
+      res.status(result.ok ? 200 : 404).json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  });
+
+  api.patch("/users/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await UserController.updateUser(id, req.body);
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  });
+
   return api;
 };

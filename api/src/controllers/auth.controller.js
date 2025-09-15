@@ -1,4 +1,4 @@
-const ApplicantModel = require("../models/applicant.model");
+const ApplicantModel = require("../models/auth.model");
 const redisCtrl = require("./redis.controller");
 const emailController = require("./email.controller");
 const jwt = require("jsonwebtoken");
@@ -42,6 +42,7 @@ class AuthController {
 
       await redisCtrl.write(`kadeda-register:${email}`, payload, 900); // 15 mins
       await redisCtrl.write(`kadeda-code-register:${email}`, otp, 900);
+      console.log("testing otp", otp);
 
       // Send OTP email
       await emailController.verifyEmailEnumerator(email, otp);
@@ -255,6 +256,80 @@ class AuthController {
 
       return { ok: true, message: "Account deactivated successfully" };
     } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  async getUsers({ page = 1, limit = 10, search, status }) {
+    try {
+      const query = {};
+
+      if (search) {
+        query.$or = [
+          { firstName: new RegExp(search, "i") },
+          { lastName: new RegExp(search, "i") },
+          { middleName: new RegExp(search, "i") },
+          { email: new RegExp(search, "i") },
+          { phone: new RegExp(search, "i") },
+          { bvn: new RegExp(search, "i") },
+          { appNumber: new RegExp(search, "i") },
+        ];
+      }
+
+      if (status) {
+        query.status = status;
+      }
+
+      const skip = (page - 1) * limit;
+      const [users, total] = await Promise.all([
+        ApplicantModel.find(query)
+          .skip(skip)
+          .limit(limit)
+          .sort({ createdAt: -1 }),
+        ApplicantModel.countDocuments(query),
+      ]);
+
+      return {
+        ok: true,
+        data: users,
+        meta: {
+          total,
+          page,
+          pages: Math.ceil(total / limit),
+          limit,
+        },
+        message: "Users fetched successfully",
+      };
+    } catch (error) {
+      console.log("Error fetching users:", error.message);
+      return { ok: false, message: error.message };
+    }
+  }
+
+  async getUser(id) {
+    try {
+      const user = await ApplicantModel.findById(id);
+      return { ok: true, data: user, message: "User fetched successfully" };
+    } catch (error) {
+      console.log("Error fetching users:", error.message);
+      return { ok: false, message: error.message };
+    }
+  }
+
+  async updateUser(id, newData) {
+    try {
+      const user = await ApplicantModel.findByIdAndUpdate(id, newData, {
+        new: true,
+      });
+      return {
+        ok: true,
+        data: user,
+        message: user
+          ? "User updated successfully"
+          : "No record updated.. Data not found !!!",
+      };
+    } catch (error) {
+      console.log("Error updating user:", error.message);
       return { ok: false, message: error.message };
     }
   }
