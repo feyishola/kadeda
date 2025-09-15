@@ -1,4 +1,9 @@
-const { BUSINESS_SECTORS, SECTORS } = require("./enums/business.enums");
+const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
+const BUSINESS_SECTORS = require("./enums/business.sectors.json");
+
+// Extract sectors dynamically
+const SECTORS = Object.keys(BUSINESS_SECTORS);
 
 const BusinessSchema = new Schema(
   {
@@ -38,7 +43,12 @@ const BusinessSchema = new Schema(
     accountNumber: { type: String },
     bankName: { type: String },
     utilityBill: { type: String },
-    documents: [String],
+    documents: [
+      {
+        name: String,
+        file: String,
+      },
+    ],
   },
   { timestamps: true }
 );

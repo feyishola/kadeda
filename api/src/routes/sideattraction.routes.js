@@ -1,10 +1,16 @@
 const express = require("express");
 const { Router } = express;
-const { BUSINESS_SECTORS, SECTORS } = require("../enums/business.enums");
+const BUSINESS_SECTORS = require("../models/enums/business.sectors.json");
+
+// derive SECTORS from JSON keys
+const SECTORS = Object.keys(BUSINESS_SECTORS);
 
 module.exports = () => {
   const api = new Router();
 
+  // ------------------------------
+  // Get all sectors
+  // ------------------------------
   api.get("/sectors", (req, res) => {
     try {
       if (!SECTORS || SECTORS.length === 0) {

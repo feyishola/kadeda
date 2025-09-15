@@ -27,7 +27,9 @@ class EmailCtrl {
   }
 
   // Welcome email for enumerators
-  async welcomeEmailEnumerator(email, password) {
+  async welcomeEmailEnumerator(email) {
+    console.log("welcomeEmailEnumerator was called");
+
     let html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
             <div style="text-align: center;">${this.logoUrl}</div>
@@ -39,8 +41,7 @@ class EmailCtrl {
             </p>
             <div style="text-align: center; margin: 20px 0;">
                 <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px;">
-                    <p>Your temporary password:</p>
-                    <h3 style="background-color:#2cbeef; color: white; padding: 10px; border-radius: 5px;">${password}</h3>
+                    <h3 style="background-color:#2cbeef; color: white; padding: 10px; border-radius: 5px;">**********</h3>
                     <p style="font-style: italic;">For security, you will be required to change this password upon first login.</p>
                 </div>
             </div>
@@ -50,13 +51,68 @@ class EmailCtrl {
         </div>`;
 
     const emailData = {
-      from: `Kaduna State Government (KADEDA) <no-reply@${mailgunDomain}>`,
+      from: `Kaduna State Government (KADEDA) <no-reply@mailer.africaudio.ng>`,
       to: email,
       subject: "Welcome to KADEDA Grant Platform",
       html,
     };
 
-    await this.mg.messages().send(emailData);
+    // await this.mg.messages().send(emailData);
+    try {
+      const response = await this.mg.messages().send(emailData);
+      console.log("Mailgun response:", response);
+      return response;
+    } catch (error) {
+      console.error("Mailgun send error:", error);
+      throw error;
+    }
+  }
+
+  async welcomeApplicants(email) {
+    console.log("welcomeApplicants was called");
+
+    let html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+      <div style="text-align: center;">${this.logoUrl}</div>
+      <h2 style="color: #333; text-align: center;">Welcome to KADEDA Grant Platform</h2>
+      <h3 style="color: #2cbeef; text-align: center; font-weight: normal;">Kaduna State Government</h3>
+      
+      <p style="color: #555;">Dear Applicant,</p>
+      
+      <p style="color: #555;">
+        Welcome to the <strong>Kaduna State Enterprise Development Agency (KADEDA) Grant Platform</strong>.
+        We are excited to have you on board as you begin your application journey.
+      </p>
+
+      <p style="color: #555;">
+        Please look out for follow-up emails that will guide you through the next steps 
+        of your registration and application process. Make sure to check your inbox 
+        (and spam folder just in case) so you don’t miss any important updates.
+      </p>
+
+      <p style="color: #555;">
+        If you have any questions, feel free to reach out to our support team.
+      </p>
+
+      <p style="color: #555;">Best regards,<br>The KADEDA Team</p>
+      ${this.getFooter()}
+    </div>`;
+
+    const emailData = {
+      from: `Kaduna State Government (KADEDA) <no-reply@mailer.africaudio.ng>`,
+      to: email,
+      subject: "Welcome to KADEDA Grant Platform",
+      html,
+    };
+
+    try {
+      const response = await this.mg.messages().send(emailData);
+      console.log("Mailgun response:", response);
+      return response;
+    } catch (error) {
+      console.error("Mailgun send error:", error);
+      throw error;
+    }
   }
 
   // Verify email with OTP
@@ -81,7 +137,7 @@ class EmailCtrl {
         </div>`;
 
     const emailData = {
-      from: `Kaduna State Government (KADEDA) <no-reply@${mailgunDomain}>`,
+      from: `Kaduna State Government (KADEDA) <no-reply@mailer.africaudio.ng>`,
       to: email,
       subject: "Verify Your KADEDA Account",
       html,
@@ -107,9 +163,51 @@ class EmailCtrl {
         </div>`;
 
     const emailData = {
-      from: `Kaduna State Government (KADEDA) <no-reply@${mailgunDomain}>`,
+      from: `Kaduna State Government (KADEDA) <no-reply@mailer.africaudio.ng>`,
       to: email,
       subject: "KADEDA Password Reset Request",
+      html,
+    };
+
+    await this.mg.messages().send(emailData);
+  }
+
+  async applicationStartedEmail(email, applicationNumber) {
+    let html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+            <div style="text-align: center;">${this.logoUrl}</div>
+            <h2 style="color: #333; text-align: center;">Your Application Has Been Started</h2>
+            <h3 style="color:#2cbeef; text-align: center; font-weight: normal;">Kaduna State Government (KADEDA)</h3>
+            
+            <p style="color: #555;">Hello,</p>
+            <p style="color: #555;">
+                Thank you for registering with the Kaduna State Enterprise Development Agency (KADEDA) grant platform. 
+                We are pleased to inform you that your application process has been initiated.
+            </p>
+            
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px;">
+                    <p>Your unique application number is:</p>
+                    <h2 style="background-color:#2cbeef; color: white; padding: 15px; border-radius: 5px;">${applicationNumber}</h2>
+                    <p style="font-size: 13px; color: #777;">Please keep this number safe. You will use it for tracking and correspondence regarding your application.</p>
+                </div>
+            </div>
+            
+            <p style="color: #555;">Next Steps:</p>
+            <ul style="color: #555; line-height: 1.6;">
+                <li>Log in to your account and complete all required fields.</li>
+                <li>Ensure that your documents are uploaded correctly.</li>
+                <li>Monitor your application status regularly.</li>
+            </ul>
+            
+            <p style="color: #555;">Best regards,<br>The KADEDA Team</p>
+            ${this.getFooter()}
+        </div>`;
+
+    const emailData = {
+      from: `Kaduna State Government (KADEDA) <no-reply@mailer.africaudio.ng>`,
+      to: email,
+      subject: "KADEDA Application Started",
       html,
     };
 

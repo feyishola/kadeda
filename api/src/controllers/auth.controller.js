@@ -1,91 +1,182 @@
-const UserModel = require("../models/user.model");
+const ApplicantModel = require("../models/applicant.model");
 const redisCtrl = require("./redis.controller");
 const emailController = require("./email.controller");
 const jwt = require("jsonwebtoken");
 const { jwtSecret } = require("../config");
 
-class UserController {
-  constructor() {}
-
-  async register(body, isAdmin = false) {
+class AuthController {
+  /**
+   * STEP 1: Register Applicant (temporary in Redis)
+   */
+  async registerUser(body) {
     try {
-      const { otp, email } = body;
-      if (!isAdmin) {
-        const value = await redisCtrl.read(`4bcreation-code-register:${email}`);
-        if (!value || value !== otp) throw new Error("Invalid or Expired code");
+      const { email, phone, bvn, firstName, middleName, lastName } = body;
+
+      // Validation
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error("A valid email address is required.");
       }
-      const newUser = new UserModel(body);
-      await newUser.save();
-      newUser.password = "********";
-      // await emailController.welcomeEmailEnumerator(email, tempPassword);
+      if (!phone || !/^\d{11}$/.test(phone)) {
+        throw new Error("Phone number is required and must be 11 digits.");
+      }
+      if (!bvn || !/^\d{11}$/.test(bvn)) {
+        throw new Error("A valid 11-digit BVN is required.");
+      }
+
+      // Check if applicant already exists
+      const applicantExists = await ApplicantModel.findOne({
+        $or: [{ email }, { phone }],
+      });
+      if (applicantExists) throw new Error("Applicant already exists");
+
+      // Store initial data temporarily in Redis
+      const otp = this.generateSixDigitCode();
+      const payload = JSON.stringify({
+        email,
+        phone,
+        bvn,
+        firstName,
+        middleName,
+        lastName,
+      });
+
+      await redisCtrl.write(`kadeda-register:${email}`, payload, 900); // 15 mins
+      await redisCtrl.write(`kadeda-code-register:${email}`, otp, 900);
+
+      // Send OTP email
+      await emailController.verifyEmailEnumerator(email, otp);
 
       return {
         ok: true,
-        data: newUser,
-        message: "Registration successful",
+        message: "Registration started. Check your email for the OTP.",
       };
     } catch (error) {
-      return this.handleDuplicateKeyError(error);
+      return { ok: false, message: error.message };
     }
   }
 
-  async newRegister(body) {
+  /**
+   * STEP 2: Verify OTP and create Applicant in MongoDB
+   */
+  async verifyOtp(email, otp) {
     try {
-      const { email, phone } = body;
-      // check if user already exists BY EMAIL OR PHONE
-      const user = await UserModel.findOne({ $or: [{ email }, { phone }] });
-      if (user) {
-        throw new Error("User already exists");
+      const storedOtp = await redisCtrl.read(`kadeda-code-register:${email}`);
+      if (!storedOtp || storedOtp !== otp) {
+        throw new Error("Invalid or expired OTP");
       }
 
-      const newUser = new UserModel(userData);
-      await newUser.save();
+      // Retrieve applicant payload from Redis
+      const applicantData = await redisCtrl.read(`kadeda-register:${email}`);
+      if (!applicantData)
+        throw new Error("Registration data expired. Restart process.");
 
-      // Send welcome email with credentials after successful user creation
-      await emailController.welcomeEmailEnumerator(email, tempPassword);
-      newUser.password = "********";
+      const { phone, bvn } = JSON.parse(applicantData);
+
+      // Create Applicant in MongoDB
+      const newApplicant = new ApplicantModel({
+        email,
+        phone,
+        bvn,
+        firstName,
+        middleName,
+        lastName,
+        status: "active",
+      });
+      await newApplicant.save({ validateBeforeSave: false });
+
+      // Clean up Redis
+      await redisCtrl.del(`kadeda-register:${email}`);
+      await redisCtrl.del(`kadeda-code-register:${email}`);
+
+      // Send welcome email
+      await emailController.welcomeApplicants(email);
+
       return {
         ok: true,
-        data: { ...newUser, tempPassword },
-        message: "Registration successful",
+        data: newApplicant,
+        message: "Email verified successfully. Applicant created.",
       };
     } catch (error) {
-      return this.handleDuplicateKeyError(error);
+      return { ok: false, message: error.message };
     }
   }
 
-  async login(email, password, notificationId) {
+  /**
+   * STEP 3: Applicant completes profile
+   */
+  async createApplicantProfile(appNumber, applicantData) {
     try {
-      const user = await UserModel.findOne({ email });
-      if (!user) {
-        throw new Error("User not found");
+      const applicant = await ApplicantModel.findOne({ appNumber });
+      if (!applicant) throw new Error("Applicant not found");
+      if (applicant.status !== "active")
+        throw new Error("Applicant not active");
+
+      // Prevent overwriting protected fields
+      const forbidden = ["_id", "appNumber", "status", "email", "phone", "bvn"];
+      forbidden.forEach((f) => delete applicantData[f]);
+
+      Object.assign(applicant, applicantData);
+      await applicant.save();
+
+      return {
+        ok: true,
+        data: applicant,
+        message: "Applicant profile updated successfully",
+      };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  /**
+   * STEP 2b: Resend OTP
+   */
+  async resendOtp(email) {
+    try {
+      // Check if registration exists in Redis
+      const applicantData = await redisCtrl.read(`kadeda-register:${email}`);
+      if (!applicantData) {
+        throw new Error("No pending registration found. Please start again.");
       }
+
+      // Generate new OTP
+      const otp = this.generateSixDigitCode();
+
+      // Store new OTP in Redis (reset expiry to 15 mins)
+      await redisCtrl.write(`kadeda-code-register:${email}`, otp, 900);
+
+      // Send OTP via email
+      await emailController.verifyEmailEnumerator(email, otp);
+
+      return { ok: true, message: "A new OTP has been sent to your email." };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  /**
+   * STEP 4: Login
+   */
+  async login(email, password) {
+    try {
+      const user = await ApplicantModel.findOne({ email });
+      if (!user) throw new Error("User not found");
 
       const isValid = await user.isValidPassword(password);
-      if (!isValid) {
-        throw new Error("Invalid password");
-      }
+      if (!isValid) throw new Error("Invalid password");
 
-      if (user.status == "disable") {
-        throw new Error("User is suspended");
-      }
-
-      if (user.status !== "active") {
-        throw new Error("User is not activated [Contact Admin]");
-      }
-
-      // await user.postLogin(notificationId)
+      if (user.status !== "active") throw new Error("Account not activated");
 
       const accessToken = this.encodeToken(
-        { email: user.email, role: user.role, id: user._id }
-        // { expiresIn: "1h" }
+        { id: user._id, email: user.email, role: user.role },
+        { expiresIn: "1h" }
       );
-      const refreshToken = this.encodeToken({
-        email: user.email,
-        role: user.role,
-        id: user._id,
-      });
-      await redisCtrl.write(`4bcreation-token::${user.email}`, refreshToken);
+      const refreshToken = this.encodeToken(
+        { id: user._id, email: user.email, role: user.role },
+        { expiresIn: "7d" }
+      );
+
+      await redisCtrl.write(`kadeda-token::${user.email}`, refreshToken);
 
       return {
         ok: true,
@@ -93,297 +184,102 @@ class UserController {
         message: "Login successful",
       };
     } catch (error) {
-      console.log("Error logging in:", error.message);
       return { ok: false, message: error.message };
     }
   }
 
-  async verifyEmail(email) {
-    try {
-      const user = await UserModel.findOne({ email });
-      if (user) {
-        throw new Error("User with this email already exists");
-      }
-      return await this.sendOTPtoEmail(email);
-    } catch (error) {
-      console.log("Error verifying email:", error.message);
-      return { ok: false, message: error.message };
-    }
-  }
-
-  async getAccessToken(email, refreshToken) {
-    try {
-      const value = await redisCtrl.read(`4bcreation-token::${email}`);
-      if (!value || value !== refreshToken) throw new Error("Invalid token");
-      const user = this.decodeToken(value);
-      const accessToken = this.encodeToken(
-        { email: user.email, role: user.role, id: user._id },
-        { expiresIn: "0.2h" }
-      );
-
-      return { ok: true, data: { accessToken } };
-    } catch (error) {
-      return { ok: false, message: error.message };
-    }
-  }
-
+  /**
+   * Recover Account (sends OTP for password reset)
+   */
   async recoverAccount(email) {
     try {
-      const account = await UserModel.findOne({ email });
-      if (!account) {
-        throw new Error("Account not found");
-      }
-      return await this.sendOTPtoEmailAccountRecovery(email);
+      const account = await ApplicantModel.findOne({ email });
+      if (!account) throw new Error("Account not found");
+
+      const otp = this.generateSixDigitCode();
+      await redisCtrl.write(`kadeda-code-reset:${email}`, otp, 600);
+      await emailController.forgetPasswordEnumerator(email, otp);
+
+      return { ok: true, message: "Recovery OTP sent to your email" };
     } catch (error) {
-      console.log("Error Recovering Account:", error.message);
       return { ok: false, message: error.message };
     }
   }
 
-  async validateCode(otp, email) {
+  /**
+   * Reset Password
+   */
+  async resetPassword(email, otp, newPassword) {
     try {
-      const value = await redisCtrl.read(`4bcreation-code-reset:${otp}`);
-      if (!email || value != email) throw new Error("Invalid or Expired code");
-      const token = this.encodeToken(
-        {
-          email,
-        },
-        { expiresIn: "0.1h" }
-      );
-      return {
-        ok: true,
-        data: { token },
-        message: "password changed succesfully",
-      };
+      const value = await redisCtrl.read(`kadeda-code-reset:${email}`);
+      if (!value || value !== otp) throw new Error("Invalid or expired OTP");
+
+      const user = await ApplicantModel.findOne({ email });
+      if (!user) throw new Error("Account not found");
+
+      await user.changePassword(newPassword);
+
+      return { ok: true, message: "Password reset successfully" };
     } catch (error) {
       return { ok: false, message: error.message };
     }
   }
 
-  async resetPassword(token, password) {
+  /**
+   * Activate Account (Admin or OTP flow)
+   */
+  async activateAccount(userId) {
     try {
-      const { email } = await this.decodeToken(token);
-      const user = await UserModel.findOne({ email });
-      if (!user) {
-        return { ok: false, message: "Account not found" };
-      }
-      if (!password) {
-        return { ok: false, message: "Invalid password" };
-      }
-      await user.changePassword(password);
-      return { ok: true, data: user, message: "password changed succesfully" };
+      const user = await ApplicantModel.findById(userId);
+      if (!user) throw new Error("User not found");
+
+      user.status = "active";
+      await user.save();
+
+      return { ok: true, message: "Account activated successfully" };
     } catch (error) {
       return { ok: false, message: error.message };
     }
   }
 
-  async activateAccount(token, password) {
+  /**
+   * Deactivate Account (Admin flow)
+   */
+  async deactivateAccount(userId) {
     try {
-      const { email } = await this.decodeToken(token);
-      const user = await UserModel.findOne({ email });
-      if (!user) {
-        return { ok: false, message: "Account not found" };
-      }
-      if (!password) {
-        return { ok: false, message: "Invalid password" };
-      }
-      await user.activateUser(password);
-      // await user.postLogin(notificationId);
+      const user = await ApplicantModel.findById(userId);
+      if (!user) throw new Error("User not found");
 
-      const accessToken = this.encodeToken(
-        { email: user.email, role: user.role, id: user._id }
-        // { expiresIn: "1h" }
-      );
-      const refreshToken = this.encodeToken({
-        email: user.email,
-        role: user.role,
-        id: user._id,
-      });
-      await redisCtrl.write(`4bcreation-token::${user.email}`, refreshToken);
-      return {
-        ok: true,
-        data: { user, accessToken, refreshToken },
-        message: "Account Activated succesfully",
-      };
+      user.status = "inactive";
+      await user.save();
+
+      return { ok: true, message: "Account deactivated successfully" };
     } catch (error) {
       return { ok: false, message: error.message };
     }
   }
 
-  async getUsers(filter = {}, options = {}) {
-    try {
-      // Extract pagination parameters with defaults
-      const page = parseInt(options.page) || 1;
-      const limit = parseInt(options.limit) || 50;
-      const skip = (page - 1) * limit;
-
-      // Extract sorting parameters
-      const sort = options.sort || { createdAt: -1 }; // Default sort by creation date
-
-      // Count total documents for pagination metadata
-      const total = await UserModel.countDocuments(filter);
-
-      // Get paginated results
-      const users = await UserModel.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit);
-
-      // Calculate pagination metadata
-      const totalPages = Math.ceil(total / limit);
-      const hasNext = page < totalPages;
-      const hasPrev = page > 1;
-
-      return {
-        ok: true,
-        data: users,
-        pagination: {
-          total,
-          totalPages,
-          currentPage: page,
-          limit,
-          hasNext,
-          hasPrev,
-        },
-        message: `Found ${users.length} users (page ${page} of ${totalPages})`,
-      };
-    } catch (error) {
-      console.log("Error fetching users:", error.message);
-      return { ok: false, message: error.message };
-    }
-  }
-
-  async updateUser(id, newData) {
-    try {
-      const user = await UserModel.findByIdAndUpdate(id, newData, {
-        new: true,
-      });
-      return {
-        ok: true,
-        data: user,
-        message: user
-          ? "User updated successfully"
-          : "No record updated.. Data not found !!!",
-      };
-    } catch (error) {
-      console.log("Error updating user:", error.message);
-      return { ok: false, message: error.message };
-    }
-  }
-
+  /**
+   * Utilities
+   */
   encodeToken(payload, options = {}) {
     return jwt.sign(payload, jwtSecret, options);
   }
 
   decodeToken(token) {
-    try {
-      return jwt.verify(token, jwtSecret);
-    } catch (error) {
-      console.log("Token not verified:", error.message);
-      return null;
-    }
-  }
-
-  async verifyCode(key, code) {
-    try {
-      const value = await redisCtrl.read(key);
-      if (code === value) {
-        return true;
-      } else {
-        return false;
-      }
-    } catch (error) {
-      console.log("Token not verified:", error.message);
-      return null;
-    }
-  }
-
-  async sendOTPtoEmail(email) {
-    try {
-      const otp = this.generateSixDigitCode();
-      await redisCtrl.write(`4bcreation-code-register:${email}`, otp);
-      await emailController.verifyEmailEnumerator(email, otp);
-      return { ok: true, message: "Six digit code sent to your email" };
-    } catch (error) {
-      return {
-        ok: false,
-        message: error.message,
-      };
-    }
-  }
-
-  async sendOTPtoEmailAccountRecovery(email) {
-    try {
-      const otp = this.generateSixDigitCode();
-      await redisCtrl.write(`4bcreation-code-reset:${otp}`, email);
-      await emailController.forgetPasswordEnumerator(email, otp);
-      return { ok: true, message: "Six digit code sent to your email" };
-    } catch (error) {
-      return {
-        ok: false,
-        message: error.message,
-      };
-    }
+    return jwt.verify(token, jwtSecret);
   }
 
   generateSixDigitCode() {
-    let code = "";
-    while (code.length < 6) {
-      let digit = Math.floor(Math.random() * 9) + 1;
-      code += digit;
-    }
-    return code;
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
   handleDuplicateKeyError(error) {
     if (error.code === 11000) {
-      const matches = error.message.match(/index: (.+?) dup key: { (.+?) }/);
-      if (matches) {
-        const [, fieldName, fieldValue] = matches;
-        return {
-          ok: false,
-          message: `A user with the '${fieldValue}' already exists.`,
-        };
-      } else {
-        return {
-          ok: false,
-          message:
-            "A duplicate value was provided. Please check your information.",
-        };
-      }
-    } else {
-      console.log("Error creating user:", error.message);
-      return { ok: false, message: error.message };
+      return { ok: false, message: "Duplicate record exists." };
     }
-  }
-
-  generateTemporaryPassword() {
-    const length = 8;
-    const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const lowercase = "abcdefghijklmnopqrstuvwxyz";
-    const numbers = "0123456789";
-    const special = "@#$%&*";
-
-    let password = "";
-
-    // Ensure at least one of each character type
-    password += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
-    password += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
-    password += numbers.charAt(Math.floor(Math.random() * numbers.length));
-    password += special.charAt(Math.floor(Math.random() * special.length));
-
-    // Fill the rest randomly
-    const allChars = uppercase + lowercase + numbers + special;
-    for (let i = password.length; i < length; i++) {
-      password += allChars.charAt(Math.floor(Math.random() * allChars.length));
-    }
-
-    // Shuffle the password
-    return password
-      .split("")
-      .sort(() => Math.random() - 0.5)
-      .join("");
+    return { ok: false, message: error.message };
   }
 }
 
-module.exports = new UserController();
+module.exports = new AuthController();

@@ -1,207 +1,113 @@
-const AuthController = require("../controllers/auth.controller");
 const express = require("express");
-const { base64toURL } = require("../middleware/upload.middleware");
+const AuthController = require("../controllers/auth.controller");
 
 module.exports = () => {
   const api = new express.Router();
 
+  // Step 1: Register user
   api.post("/register", async (req, res) => {
     try {
-      const body = req.body;
-      const { ok, data, message } = await AuthController.register(body);
-      if (!ok) throw new Error(message);
-      res.status(201).json({ ok, data, message });
+      const result = await AuthController.registerUser(req.body);
+      res.status(result.ok ? 201 : 400).json(result);
     } catch (error) {
-      res.status(400).json({ ok: false, message: error.message });
+      res.status(500).json({ ok: false, message: error.message });
     }
   });
 
-  // api.post("/register-admin", async (req, res) => {
-  //   try {
-  //     const body = req.body;
-  //     const { ok, data, message } = await AuthController.register(body, true);
-  //     if (!ok) throw new Error(message);
-  //     res.status(201).json({ ok, data, message });
-  //   } catch (error) {
-  //     res.status(400).json({ ok: false, message: error.message });
-  //   }
-  // });
+  // Step 2: Verify OTP
+  api.post("/verify-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      const result = await AuthController.verifyOtp(email, otp);
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  });
 
-  api.post("/verify-email", async (req, res) => {
+  // Step 2b: Resend OTP
+  api.post("/resend-otp", async (req, res) => {
     try {
       const { email } = req.body;
-      const { ok, message } = await AuthController.verifyEmail(email);
-      if (ok) {
-        res.status(200).json({ ok, message });
-      } else {
-        res.status(500).json({ ok, message });
-      }
+      const result = await AuthController.resendOtp(email);
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
 
+  // Step 3: Applicant profile
+  api.post("/applicant/register", async (req, res) => {
+    try {
+      const { userId, ...applicantData } = req.body;
+      const result = await AuthController.createApplicantProfile(
+        userId,
+        applicantData
+      );
+      res.status(result.ok ? 201 : 400).json(result);
+    } catch (error) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  });
+
+  // Step 4: Login
   api.post("/login", async (req, res) => {
     try {
-      const { email, password, notificationId } = req.body;
-      const { ok, data, message } = await AuthController.login(
-        email,
-        password,
-        notificationId
-      );
-      if (ok) {
-        res.status(200).json({ ok, data });
-      } else {
-        res.status(400).json({ ok, message });
-      }
+      const { email, password } = req.body;
+      const result = await AuthController.login(email, password);
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
 
-  api.post("/refresh-token", async (req, res) => {
-    const { refreshToken, email } = req.body;
-    try {
-      const { ok, data, message } = await AuthController.getAccessToken(
-        email,
-        refreshToken
-      );
-      if (ok) {
-        res.status(200).json({ ok, data });
-      } else {
-        res.status(400).json({ ok, message });
-      }
-    } catch (error) {
-      res.status(500).json({ ok: false, message: error.message });
-    }
-  });
-
+  // Recover Account (send OTP for password reset)
   api.post("/recover-account", async (req, res) => {
     try {
       const { email } = req.body;
-      const { ok, message } = await AuthController.recoverAccount(email);
-      if (ok) {
-        res.status(200).json({ ok, message });
-      } else {
-        res.status(400).json({ ok, message });
-      }
+      const result = await AuthController.recoverAccount(email);
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
 
-  api.post("/validate-code", async (req, res) => {
-    try {
-      const { email, otp } = req.body;
-      const { ok, data, message } = await AuthController.validateCode(
-        otp,
-        email
-      );
-      if (ok) {
-        res.status(200).json({ ok, data, message });
-      } else {
-        res.status(500).json({ ok, message });
-      }
-    } catch (error) {
-      res.status(500).json({ ok: false, message: error.message });
-    }
-  });
-
+  // Reset Password
   api.post("/reset-password", async (req, res) => {
     try {
-      const { password, token } = req.body;
-      const { ok, data, message } = await AuthController.resetPassword(
-        token,
-        password
+      const { email, otp, newPassword } = req.body;
+      const result = await AuthController.resetPassword(
+        email,
+        otp,
+        newPassword
       );
-      if (ok) {
-        res.status(200).json({ ok, data });
-      } else {
-        res.status(400).json({ ok, message });
-      }
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
 
-  api.post("/activate-account", async (req, res) => {
+  // Activate Account (admin or system action)
+  api.patch("/activate", async (req, res) => {
     try {
-      const { password, token } = req.body;
-      const { ok, data, message } = await AuthController.activateAccount(
-        token,
-        password
-      );
-      if (ok) {
-        res.status(200).json({ ok, data });
-      } else {
-        res.status(400).json({ ok, message });
-      }
+      const { userId } = req.body;
+      const result = await AuthController.activateAccount(userId);
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
 
-  api.get("/", async (req, res) => {
+  // Deactivate Account (admin action)
+  api.patch("/deactivate", async (req, res) => {
     try {
-      const filter = req.query;
-      const { ok, data, message } = await AuthController.getUsers(filter);
-      if (ok) {
-        res.status(200).json({ ok, message, data });
-      } else {
-        res.status(500).json({ ok, message, data });
-      }
+      const { userId } = req.body;
+      const result = await AuthController.deactivateAccount(userId);
+      res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
   });
-
-  api.put("/activate/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      console.log(id);
-      const { ok, data, message } = await AuthController.updateUser(id, {
-        status: "active",
-      });
-      if (ok) {
-        res.status(200).json({ ok, message, data });
-      } else {
-        res.status(500).json({ ok, message, data });
-      }
-    } catch (error) {
-      res.status(500).json({ ok: false, message: error.message });
-    }
-  });
-
-  api.put("/deactivate/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { ok, data, message } = await AuthController.updateUser(id, {
-        status: "disable",
-      });
-      if (ok) {
-        res.status(200).json({ ok, message, data });
-      } else {
-        res.status(500).json({ ok, message, data });
-      }
-    } catch (error) {
-      res.status(500).json({ ok: false, message: error.message });
-    }
-  });
-
-  // api.put("/:id", async (req, res) => {
-  //   try {
-  //     const { id } = req.params;
-  //     const body = req.body;
-  //     const { ok, data, message } = await AuthController.updateUser(id, body);
-  //     if (ok) {
-  //       res.status(200).json({ ok, message, data });
-  //     } else {
-  //       res.status(500).json({ ok, message, data });
-  //     }
-  //   } catch (error) {
-  //     res.status(500).json({ ok: false, message: error.message });
-  //   }
-  // });
 
   return api;
 };

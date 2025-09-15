@@ -1,69 +1,37 @@
-// require('dotenv').config();
-require('./connection/mongo.connection')();
-const express = require('express');
+require("./connections/mongo.connection")();
+const express = require("express");
+const cors = require("cors");
+const { appPort } = require("./config");
+
 const app = express();
-const cors = require('cors');
-const { appPort } = require('./config');
-const swaggerJsDoc = require('swagger-jsdoc');
-const swaggerUi = require('swagger-ui-express');
 
-// Swagger configuration
-const swaggerOptions = {
-  swaggerDefinition: {
-    openapi: '3.0.0',
-    info: {
-      title: '4B Creation API',
-      version: '1.0.0',
-      description: 'API documentation for 4B Creation application',
-      contact: {
-        name: 'API Support'
-      },
-      servers: [{
-        url: `http://localhost:${appPort}`,
-        description: 'Development server'
-      }]
-    },
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT'
-        }
-      }
-    }
-  },
-  apis: ['./src/route/*.js'], // Path to the API routes with Swagger comments
-};
-
-const swaggerDocs = swaggerJsDoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
-
-app.use(express.json({limit:"100mb"}));
+// Middleware
+app.use(express.json({ limit: "100mb" }));
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 
-//log request
+// Log every request
 app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
-    next();
+  console.log(`${req.method} ${req.url}`);
+  next();
 });
 
-app.use('/api/v1/user', require('./route/user.route')());
-app.use('/api/v1/admin', require('./route/admin.route')());
+// Routes
+app.use("/api/v1/auth", require("./routes/auth.routes")());
+app.use("/dropdown", require("./routes/sideattraction.routes")());
 
-// Register new routes
-app.use('/api/v1/analytics', require('./route/analytics.route')());
-app.use('/api/v1/certificates', require('./route/certificate.route')());
-app.use('/api/v1/clusters', require('./route/cluster.route')());
-app.use('/api/v1/interactions', require('./route/interaction.route')());
-app.use('/api/v1/quizes', require('./route/quize.route')());
-app.use('/api/v1/quize-attempts', require('./route/quizeAttempt.route')());
-app.use('/api/v1/webinars', require('./route/webinar.route')());
+// Default 404 handler
+app.use((req, res) => {
+  res.status(404).json({ ok: false, message: "Route not found" });
+});
 
+// Error handler (safety net)
+app.use((err, req, res, next) => {
+  console.error("Unhandled Error:", err);
+  res.status(500).json({ ok: false, message: "Internal server error" });
+});
+
+// Start server
 app.listen(appPort, () => {
-    console.log(`Server is running on port ${appPort}`);
-    console.log(`API Documentation available at http://localhost:${appPort}/api-docs`);
+  console.log(`🚀 Server is running on port ${appPort}`);
 });
-
-	

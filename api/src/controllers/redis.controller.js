@@ -2,7 +2,7 @@ const {
   publisher,
   subscriber,
   client,
-} = require("../connection/redis.connection");
+} = require("../connections/redis.connection");
 
 class RedisCTRL {
   constructor() {
