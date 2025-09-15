@@ -42,6 +42,22 @@ class RedisCTRL {
     }
   }
 
+  async delete(key) {
+    try {
+      const result = await client.del(key);
+      if (result === 1) {
+        console.log(`Key ${key} deleted successfully.`);
+        return true;
+      } else {
+        console.log(`Key ${key} not found.`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`Error deleting key ${key}:`, error);
+      return false;
+    }
+  }
+
   async plish(chan, msg) {
     try {
       await publisher.publish(chan, JSON.stringify(msg));

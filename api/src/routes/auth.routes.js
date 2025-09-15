@@ -39,9 +39,9 @@ module.exports = () => {
   // Step 3: Applicant profile
   api.post("/applicant/register", async (req, res) => {
     try {
-      const { userId, ...applicantData } = req.body;
+      const { appNumber, ...applicantData } = req.body;
       const result = await AuthController.createApplicantProfile(
-        userId,
+        appNumber,
         applicantData
       );
       res.status(result.ok ? 201 : 400).json(result);
@@ -112,7 +112,7 @@ module.exports = () => {
   api.get("/users", async (req, res) => {
     try {
       const { page, limit, search, status } = req.query;
-      const result = await UserController.getUsers({
+      const result = await AuthController.getUsers({
         page: Number(page) || 1,
         limit: Number(limit) || 10,
         search,
@@ -127,7 +127,7 @@ module.exports = () => {
   api.get("/users/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const result = await UserController.getUser(id);
+      const result = await AuthController.getUser(id);
       res.status(result.ok ? 200 : 404).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
@@ -137,7 +137,7 @@ module.exports = () => {
   api.patch("/users/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const result = await UserController.updateUser(id, req.body);
+      const result = await AuthController.updateUser(id, req.body);
       res.status(result.ok ? 200 : 400).json(result);
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });

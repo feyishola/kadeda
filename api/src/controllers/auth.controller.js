@@ -71,7 +71,8 @@ class AuthController {
       if (!applicantData)
         throw new Error("Registration data expired. Restart process.");
 
-      const { phone, bvn } = JSON.parse(applicantData);
+      const { phone, bvn, firstName, middleName, lastName } =
+        JSON.parse(applicantData);
 
       // Create Applicant in MongoDB
       const newApplicant = new ApplicantModel({
@@ -86,8 +87,8 @@ class AuthController {
       await newApplicant.save({ validateBeforeSave: false });
 
       // Clean up Redis
-      await redisCtrl.del(`kadeda-register:${email}`);
-      await redisCtrl.del(`kadeda-code-register:${email}`);
+      await redisCtrl.delete(`kadeda-register:${email}`);
+      await redisCtrl.delete(`kadeda-code-register:${email}`);
 
       // Send welcome email
       await emailController.welcomeApplicants(email);
